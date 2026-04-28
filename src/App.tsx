@@ -36,7 +36,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import yaml from 'js-yaml';
 
-type AuthStep = 'email' | 'code' | 'license' | 'maintenance' | 'success';
+type AuthStep = 'license' | 'maintenance' | 'success';
 
 interface AnchorSlot {
   slot: number;
@@ -63,15 +63,13 @@ interface Project {
 
 const AppleStudio = () => {
   // Auth & Licensing
-  const [authStep, setAuthStep] = useState<AuthStep>('email');
+  const [authStep, setAuthStep] = useState<AuthStep>('license');
   const [accessToken, setAccessToken] = useState('');
   const [systemStatus, setSystemStatus] = useState<{ maintenance: boolean; maintenanceMessage: string } | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [adminLicenseSecret, setAdminLicenseSecret] = useState('studio-admin-2026'); // Demo default
-  const [email, setEmail] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
   
   // Settings
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -131,11 +129,11 @@ const AppleStudio = () => {
           } else {
             localStorage.removeItem('smartdm_auth_token');
             setIsAuthorized(false);
-            setAuthStep('email');
+            setAuthStep('license');
           }
         } catch (e) {
           // If we can't reach the server, we'll wait for the user to try again
-          setAuthStep('email');
+          setAuthStep('license');
         }
       }
     };
@@ -180,73 +178,8 @@ const AppleStudio = () => {
   const handleLogout = () => {
     localStorage.removeItem('smartdm_auth_token');
     setIsAuthorized(false);
-    setAuthStep('email');
+    setAuthStep('license');
     setAccessToken('');
-    setEmail('');
-    setVerificationCode('');
-  };
-
-  const handleSendCode = async () => {
-    if (!email.includes('@')) {
-      setError('Invalid neural identifier.');
-      return;
-    }
-    setAuthLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/auth/send-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      if (res.ok) {
-        setAuthStep('code');
-        setNotification({ message: 'Neural verification transmission sent.', type: 'success' });
-      } else {
-        const data = await res.json();
-        setError(data.error || 'Transmission failed.');
-      }
-    } catch (err) {
-      setError('Neural core connection unstable.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleVerifyCode = async () => {
-    if (verificationCode.length !== 6) {
-      setError('Invalid code sequence.');
-      return;
-    }
-    setAuthLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: verificationCode })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const token = data.token || 'STUDIO-SESSION';
-        
-        // Aesthetic delay for the link sequence
-        setTimeout(() => {
-          setIsAuthorized(true);
-          setAuthStep('success');
-          localStorage.setItem('smartdm_auth_token', token);
-          setNotification({ message: 'Neural link established.', type: 'success' });
-          setAuthLoading(false);
-        }, 800);
-      } else {
-        const data = await res.json();
-        setError(data.error || 'Verification failed.');
-        setAuthLoading(false);
-      }
-    } catch (err) {
-      setError('Neural core connection unstable. Please try again.');
-      setAuthLoading(false);
-    }
   };
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projects.length > 0 ? projects[0].id : null);
@@ -599,59 +532,33 @@ const AppleStudio = () => {
               </div>
 
               <AnimatePresence mode="wait">
-                {authStep === 'email' && (
-                  <motion.div key="email" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] ml-2">Neural Identifier (Email)</label>
-                      <div className="relative">
-                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B]" />
-                        <input 
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="user@neural.link"
-                          className="w-full bg-black/40 border border-[#333333] rounded-2xl p-4 pl-12 text-sm focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none"
-                          onKeyDown={(e) => e.key === 'Enter' && handleSendCode()}
-                        />
-                      </div>
-                    </div>
-                    <button 
-                      onClick={handleSendCode}
-                      disabled={authLoading || !email.includes('@')}
-                      className="w-full bg-[#FF3B30] py-4 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
-                    >
-                      {authLoading ? 'TRANSMITTING...' : <>SEND CODE <ChevronRight className="w-4 h-4" /></>}
-                    </button>
-                    <button onClick={() => setView('landing')} className="w-full text-[10px] font-bold text-[#86868B] uppercase tracking-widest hover:text-white transition-colors">Return to Dashboard</button>
-                  </motion.div>
-                )}
-
-                {authStep === 'code' && (
-                  <motion.div key="code" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-                    <div className="space-y-2 text-center">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B]">Verification Signature</label>
-                      <p className="text-[9px] text-[#86868B] lowercase mt-1">Sent to: {email}</p>
+                <motion.div key="license" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] ml-2">Neural Access Code</label>
+                    <div className="relative">
+                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B]" />
                       <input 
-                        type="text"
-                        value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        placeholder="••••••"
-                        className="w-full bg-black/40 border border-[#333333] rounded-2xl p-6 text-3xl font-mono tracking-[0.5em] focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none text-center"
-                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyCode()}
+                        type="password"
+                        value={accessToken}
+                        onChange={(e) => setAccessToken(e.target.value)}
+                        placeholder="ENTER ACCESS CODE"
+                        className="w-full bg-black/40 border border-[#333333] rounded-2xl p-4 pl-12 text-sm font-mono tracking-widest focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none"
+                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyToken()}
                       />
                     </div>
-                    <div className="flex gap-4">
-                      <button onClick={() => setAuthStep('email')} className="flex-1 bg-white/5 py-4 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-white/10 transition-all">Back</button>
-                      <button 
-                        onClick={handleVerifyCode}
-                        disabled={authLoading || verificationCode.length !== 6}
-                        className="flex-[2] bg-[#FF3B30] py-4 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all"
-                      >
-                        {authLoading ? 'VERIFYING...' : 'VERIFY CODE'}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
+                  </div>
+                  <button 
+                    onClick={handleVerifyToken}
+                    disabled={authLoading || accessToken.length < 4}
+                    className="w-full bg-[#FF3B30] py-4 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all"
+                  >
+                    {authLoading ? 'VERIFYING...' : 'INITIALIZE LINK'}
+                  </button>
+                  <p className="text-[9px] text-center text-[#86868B] uppercase tracking-widest leading-relaxed">
+                    Access Code Required for Neural Synchronization
+                  </p>
+                  <button onClick={() => setView('landing')} className="w-full text-[10px] font-bold text-[#86868B] uppercase tracking-widest hover:text-white transition-colors">Return to Dashboard</button>
+                </motion.div>
               </AnimatePresence>
 
               {error && <p className="text-[10px] font-bold text-[#FF3B30] text-center uppercase border border-[#FF3B30]/20 p-3 rounded-xl">{error}</p>}
