@@ -64,13 +64,14 @@ async function startServer() {
   app.post("/api/auth/verify-code", (req, res) => {
     const { email, code } = req.body;
     const db = getDb();
+    const SESSION_TOKEN = "STUDIO-2026";
     
     const record = db.verifications[email];
     if (record && record.code === code && record.expiry > Date.now()) {
       delete db.verifications[email];
       if (!db.users.includes(email)) db.users.push(email);
       saveDb(db);
-      res.json({ success: true });
+      res.json({ success: true, token: SESSION_TOKEN });
     } else {
       res.status(401).json({ error: "Invalid or expired transmission code." });
     }
