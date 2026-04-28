@@ -169,9 +169,9 @@ const AppleStudio = () => {
           setAuthLoading(false);
         }, 800);
       } else {
-        const errorMsg = data?.error || (res.status === 401 ? 'Invalid access code signature.' : 'Core handshake failed.');
+        const errorMsg = data?.error || (res.status === 401 ? 'Invalid access code sequence.' : `Handshake failed [Status: ${res.status}]`);
         setError(errorMsg);
-        setNotification({ message: 'Verification Failed', type: 'error' });
+        setNotification({ message: 'Authorization Denied', type: 'error' });
         setAuthLoading(false);
       }
     } catch (err: any) {

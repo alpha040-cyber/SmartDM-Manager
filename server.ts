@@ -39,6 +39,12 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Request Logger for Debugging
+  app.use((req, res, next) => {
+    console.log(`[NET] ${req.method} ${req.url} | ${new Date().toISOString()}`);
+    next();
+  });
+
   // --- API ROUTES ---
 
   // Check System Status
@@ -49,31 +55,41 @@ async function startServer() {
 
   // token Verification
   app.post("/api/auth/verify-token", (req, res) => {
+    console.log(`[AUTH] Handshake request received at ${new Date().toISOString()}`);
+    console.log(`[AUTH] Headers:`, JSON.stringify(req.headers, null, 2));
+    
     try {
       const { token } = req.body;
       const LEGACY_TOKEN = "A4D6X-PR91-NV3R";
       
-      console.log(`[AUTH] Attempting verification with token: "${token}"`);
+      console.log(`[AUTH] Raw token from body: "${token}"`);
       
       if (!token) {
-        return res.status(400).json({ error: "Neural access token missing." });
+        console.warn("[AUTH] Missing token in request body");
+        return res.status(400).json({ error: "Access token missing from transmission." });
       }
 
-      const normalize = (t: any) => t ? t.toString().replace(/[\s-]/g, "").toUpperCase() : "";
+      const normalize = (t: any) => t ? t.toString().replace(/[\s-]/g, "").trim().toUpperCase() : "";
       
       const cleanToken = normalize(token);
       const cleanLegacy = normalize(LEGACY_TOKEN);
       
+      console.log(`[AUTH] Comparing: "${cleanToken}" vs "${cleanLegacy}"`);
+      
       if (cleanToken === cleanLegacy) {
-        console.log("[AUTH] Verification successful.");
-        return res.json({ success: true, token: LEGACY_TOKEN });
+        console.log("[AUTH] Verification successful. Initializing link.");
+        return res.json({ 
+          success: true, 
+          token: LEGACY_TOKEN,
+          status: "Neural Link Established"
+        });
       } else {
-        console.log(`[AUTH] Verification failed. Expected ${cleanLegacy}, got ${cleanToken}`);
-        return res.status(401).json({ error: "Invalid neural access code." });
+        console.warn(`[AUTH] Verification failed. Input: "${cleanToken}"`);
+        return res.status(401).json({ error: "Neutral access code sequence invalid." });
       }
     } catch (error) {
-      console.error("[AUTH] Fatal error in verify-token:", error);
-      return res.status(500).json({ error: "Internal core failure." });
+      console.error("[AUTH] Fatal core exception during verification:", error);
+      return res.status(500).json({ error: "Neural core processing failure." });
     }
   });
 
