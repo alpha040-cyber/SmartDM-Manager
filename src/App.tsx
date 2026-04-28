@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Sparkles, 
   FileCode, 
@@ -186,31 +186,70 @@ const AppleStudio = () => {
     }));
   };
 
+  // Ref to track current prompt for speech recognition to avoid stale closure
+  const promptRef = useRef('');
+  useEffect(() => {
+    if (activeMenu) {
+      promptRef.current = activeMenu.prompt;
+    }
+  }, [activeMenu?.prompt]);
+
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recog = new SpeechRecognition();
       recog.continuous = true;
-      recog.interimResults = true;
+      recog.interimResults = false; // Set to false to avoid duplicating "thinking" text
       recog.lang = 'en-US';
 
       recog.onresult = (event: any) => {
-        let transcript = '';
+        let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
         }
-        if (activeMenu) {
-          updateActiveMenu({ prompt: activeMenu.prompt + ' ' + transcript });
+        
+        if (finalTranscript) {
+          const currentPrompt = promptRef.current;
+          const newPrompt = currentPrompt ? `${currentPrompt.trim()} ${finalTranscript.trim()}` : finalTranscript.trim();
+          updateActiveMenu({ prompt: newPrompt });
         }
       };
 
-      recog.onend = () => setIsListening(false);
-      recog.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
+      recog.onstart = () => {
+        setIsListening(true);
+      };
+
+      recog.onend = () => {
         setIsListening(false);
       };
 
+      recog.onerror = (event: any) => {
+        console.error('Neural dictation error:', event.error);
+        setIsListening(false);
+        
+        switch(event.error) {
+          case 'not-allowed':
+            setNotification({ message: 'Neural link blocked. Click the lock icon in your URL bar to allow microphone access.', type: 'error' });
+            break;
+          case 'network':
+            setNotification({ message: 'Neural link lost (Network Error). This is common in secure previews — please OPEN IN NEW TAB to use speech features.', type: 'error' });
+            break;
+          case 'no-speech':
+            // Silently restart or just stop
+            break;
+          case 'aborted':
+            break;
+          default:
+            setNotification({ message: `Neural error: ${event.error}. Try opening the app in a new tab.`, type: 'error' });
+        }
+      };
+
       setRecognition(recog);
+      return () => {
+        try { recog.stop(); } catch(e) {}
+      };
     }
   }, [activeMenuId]);
 
@@ -221,16 +260,22 @@ const AppleStudio = () => {
     }
 
     if (isListening) {
-      recognition.stop();
+      try {
+        recognition.stop();
+      } catch (e) {
+        console.error(e);
+      }
       setIsListening(false);
       setNotification({ message: 'Neural dictation offline.', type: 'success' });
     } else {
       try {
+        // Clear any previous error notification
+        setNotification(null);
         recognition.start();
-        setIsListening(true);
-        setNotification({ message: 'Neural dictation active...', type: 'success' });
+        // Note: isListening is handled by the onstart callback
       } catch (e) {
-        console.error(e);
+        console.error('Failed to start recognition:', e);
+        setNotification({ message: 'Failed to initialize Neural Link. Try reloading or opening in a new tab.', type: 'error' });
       }
     }
   };
