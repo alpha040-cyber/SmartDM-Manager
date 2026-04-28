@@ -47,15 +47,45 @@ async function startServer() {
     res.json(db.settings);
   });
 
+  // Verification Code Generation
+  app.post("/api/auth/send-code", (req, res) => {
+    const { email } = req.body;
+    if (!email || !email.includes("@")) return res.status(400).json({ error: "Invalid neural identifier." });
+
+    const db = getDb();
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    db.verifications[email] = { code, expiry: Date.now() + 600000 }; // 10 min
+    saveDb(db);
+
+    console.log(`[AUTH] Verification code for ${email}: ${code}`);
+    res.json({ success: true, message: "Verification transmission sent." });
+  });
+
+  app.post("/api/auth/verify-code", (req, res) => {
+    const { email, code } = req.body;
+    const db = getDb();
+    
+    const record = db.verifications[email];
+    if (record && record.code === code && record.expiry > Date.now()) {
+      delete db.verifications[email];
+      if (!db.users.includes(email)) db.users.push(email);
+      saveDb(db);
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ error: "Invalid or expired transmission code." });
+    }
+  });
+
   // token Verification
   app.post("/api/auth/verify-token", (req, res) => {
     const { token } = req.body;
     const LEGACY_TOKEN = "A4D6X-PR91-NV3R";
+    const SESSION_TOKEN = "STUDIO-2026";
     
-    if (token === LEGACY_TOKEN) {
-      res.json({ success: true });
+    if (token === LEGACY_TOKEN || token === SESSION_TOKEN) {
+      res.json({ success: true, token: SESSION_TOKEN });
     } else {
-      res.status(401).json({ error: "Invalid neural access token." });
+      res.status(401).json({ error: "Invalid neural access code." });
     }
   });
 

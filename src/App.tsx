@@ -27,8 +27,10 @@ import {
   LogOut,
   Hash,
   User,
-  Mic,
-  MicOff
+  Edit3,
+  MousePointer2,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
@@ -63,13 +65,19 @@ const AppleStudio = () => {
   // Auth & Licensing
   const [authStep, setAuthStep] = useState<AuthStep>('license');
   const [accessToken, setAccessToken] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [recognition, setRecognition] = useState<any>(null);
   const [systemStatus, setSystemStatus] = useState<{ maintenance: boolean; maintenanceMessage: string } | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [adminLicenseSecret, setAdminLicenseSecret] = useState('studio-admin-2026'); // Demo default
+  const [email, setEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  
+  // Settings
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [themeColor, setThemeColor] = useState('#FF3B30');
+  const [syntaxHighlighting, setSyntaxHighlighting] = useState(true);
+  const [autoSave, setAutoSave] = useState(true);
 
   // Persistence
   const [view, setView] = useState<'landing' | 'workspace'>('landing');
@@ -108,41 +116,137 @@ const AppleStudio = () => {
     checkSystem();
 
     // Load session
-    const savedAuth = localStorage.getItem('smartdm_auth_token');
-    if (savedAuth === 'A4D6X-PR91-NV3R') {
-      setIsAuthorized(true);
-      setAuthStep('success');
-    }
+    const checkToken = async () => {
+      const savedAuth = localStorage.getItem('smartdm_auth_token');
+      if (savedAuth) {
+        try {
+          const res = await fetch('/api/auth/verify-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: savedAuth })
+          });
+          if (res.ok) {
+            setIsAuthorized(true);
+            setAuthStep('success');
+          } else {
+            localStorage.removeItem('smartdm_auth_token');
+          }
+        } catch (e) {}
+      }
+    };
+    checkToken();
   }, []);
 
   const handleVerifyToken = async () => {
-    if (accessToken !== 'A4D6X-PR91-NV3R') {
-      setError('Invalid neural access token.');
+    if (accessToken.length < 5) {
+      setError('Invalid neural access token format.');
       return;
     }
     setAuthLoading(true);
     setError('');
     
-    // Aesthetic delay for the link sequence
-    setTimeout(() => {
-      setIsAuthorized(true);
-      setAuthStep('success');
-      localStorage.setItem('smartdm_auth_token', accessToken);
-      setNotification({ message: 'Neural link established.', type: 'success' });
+    try {
+      const res = await fetch('/api/auth/verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: accessToken })
+      });
+
+      if (res.ok) {
+        // Aesthetic delay for the link sequence
+        setTimeout(() => {
+          setIsAuthorized(true);
+          setAuthStep('success');
+          localStorage.setItem('smartdm_auth_token', accessToken);
+          setNotification({ message: 'Neural link established.', type: 'success' });
+          setAuthLoading(false);
+        }, 800);
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Access denied.');
+        setAuthLoading(false);
+      }
+    } catch (err) {
+      setError('Neural interface failure. Connection unstable.');
       setAuthLoading(false);
-    }, 800);
+    }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('smartdm_auth_token');
     setIsAuthorized(false);
-    setAuthStep('license');
+    setAuthStep('email');
     setAccessToken('');
+    setEmail('');
+    setVerificationCode('');
+  };
+
+  const handleSendCode = async () => {
+    if (!email.includes('@')) {
+      setError('Invalid neural identifier.');
+      return;
+    }
+    setAuthLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        setAuthStep('code');
+        setNotification({ message: 'Neural verification transmission sent.', type: 'success' });
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Transmission failed.');
+      }
+    } catch (err) {
+      setError('Neural core connection unstable.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (verificationCode.length !== 6) {
+      setError('Invalid code sequence.');
+      return;
+    }
+    setAuthLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verificationCode })
+      });
+      if (res.ok) {
+        setAuthStep('license');
+        setNotification({ message: 'Neural signature verified.', type: 'success' });
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Verification failed.');
+      }
+    } catch (err) {
+      setError('Neural core connection unstable.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projects.length > 0 ? projects[0].id : null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(projects.length > 0 && projects[0].menus.length > 0 ? projects[0].menus[0].id : null);
   
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState<'name' | 'intent' | 'refs'>('name');
+  const [wizardData, setWizardData] = useState({
+    name: '',
+    prompt: '',
+    reference: '',
+    isExact: false
+  });
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -155,6 +259,12 @@ const AppleStudio = () => {
   }, [notification]);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'console'>('code');
+  const [workspaceTab, setWorkspaceTab] = useState<'intent' | 'builder' | 'source'>('intent');
+
+  // Sync theme color with CSS variable
+  useEffect(() => {
+    document.documentElement.style.setProperty('--accent', themeColor);
+  }, [themeColor]);
   const [consoleLogs, setConsoleLogs] = useState<{ type: 'player' | 'console' | 'system', text: string, time: string }[]>([]);
 
   // Effect to save state
@@ -186,7 +296,7 @@ const AppleStudio = () => {
     }));
   };
 
-  // Ref to track current prompt for speech recognition to avoid stale closure
+  // Ref to track current prompt
   const promptRef = useRef('');
   useEffect(() => {
     if (activeMenu) {
@@ -194,106 +304,20 @@ const AppleStudio = () => {
     }
   }, [activeMenu?.prompt]);
 
-  useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recog = new SpeechRecognition();
-      recog.continuous = true;
-      recog.interimResults = false; // Set to false to avoid duplicating "thinking" text
-      recog.lang = 'en-US';
-
-      recog.onresult = (event: any) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
-        }
-        
-        if (finalTranscript) {
-          const currentPrompt = promptRef.current;
-          const newPrompt = currentPrompt ? `${currentPrompt.trim()} ${finalTranscript.trim()}` : finalTranscript.trim();
-          updateActiveMenu({ prompt: newPrompt });
-        }
-      };
-
-      recog.onstart = () => {
-        setIsListening(true);
-      };
-
-      recog.onend = () => {
-        setIsListening(false);
-      };
-
-      recog.onerror = (event: any) => {
-        console.error('Neural dictation error:', event.error);
-        setIsListening(false);
-        
-        switch(event.error) {
-          case 'not-allowed':
-            setNotification({ message: 'Neural link blocked. Click the lock icon in your URL bar to allow microphone access.', type: 'error' });
-            break;
-          case 'network':
-            setNotification({ message: 'Neural link lost (Network Error). This is common in secure previews — please OPEN IN NEW TAB to use speech features.', type: 'error' });
-            break;
-          case 'no-speech':
-            // Silently restart or just stop
-            break;
-          case 'aborted':
-            break;
-          default:
-            setNotification({ message: `Neural error: ${event.error}. Try opening the app in a new tab.`, type: 'error' });
-        }
-      };
-
-      setRecognition(recog);
-      return () => {
-        try { recog.stop(); } catch(e) {}
-      };
-    }
-  }, [activeMenuId]);
-
-  const toggleListening = () => {
-    if (!recognition) {
-      setNotification({ message: 'Speech recognition not supported in this browser.', type: 'error' });
-      return;
-    }
-
-    if (isListening) {
-      try {
-        recognition.stop();
-      } catch (e) {
-        console.error(e);
-      }
-      setIsListening(false);
-      setNotification({ message: 'Neural dictation offline.', type: 'success' });
-    } else {
-      try {
-        // Clear any previous error notification
-        setNotification(null);
-        recognition.start();
-        // Note: isListening is handled by the onstart callback
-      } catch (e) {
-        console.error('Failed to start recognition:', e);
-        setNotification({ message: 'Failed to initialize Neural Link. Try reloading or opening in a new tab.', type: 'error' });
-      }
-    }
-  };
-
   const handleCreateProject = () => {
-    if (!newProjectName.trim()) return;
+    if (!wizardData.name.trim()) return;
     
     const id = Date.now().toString();
     const newProject: Project = {
       id,
-      name: newProjectName,
+      name: wizardData.name,
       menus: [{
         id: 'main-' + id,
         name: 'Main Menu',
-        prompt: '',
+        prompt: wizardData.prompt,
         rawConfig: '',
-        referenceMenu: '',
-        isExact: isExactMode,
+        referenceMenu: wizardData.reference,
+        isExact: wizardData.isExact,
         anchorSlots: [],
         fillerItem: 'GRAY_STAINED_GLASS_PANE'
       }]
@@ -302,8 +326,8 @@ const AppleStudio = () => {
     setProjects([...projects, newProject]);
     setActiveProjectId(id);
     setActiveMenuId(newProject.menus[0].id);
-    setNewProjectName('');
-    setIsExactMode(false);
+    setWizardData({ name: '', prompt: '', reference: '', isExact: false });
+    setWizardStep('name');
     setIsModalOpen(false);
     setView('workspace');
   };
@@ -442,13 +466,14 @@ const AppleStudio = () => {
       }
 
       const result = await ai.models.generateContentStream({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash",
         contents: [{ role: 'user', parts: promptParts.map(p => typeof p === 'string' ? { text: p } : p) }],
         config: { systemInstruction, temperature: 0.7 }
       });
 
       let fullText = '';
       updateActiveMenu({ rawConfig: '' });
+      setWorkspaceTab('source');
 
       for await (const chunk of result) {
         const chunkText = chunk.text;
@@ -465,7 +490,6 @@ const AppleStudio = () => {
       
       addLog('system', 'Synthesis complete. Configuration is ready for deployment.');
       setNotification({ message: 'Configuration synthesized successfully', type: 'success' });
-      setActiveTab('code');
     } catch (err: any) {
       console.error("Generation error:", err);
       let msg = err.message || 'Synthesis aborted due to an internal error.';
@@ -561,25 +585,31 @@ const AppleStudio = () => {
               </div>
 
               <AnimatePresence mode="wait">
-                <motion.div key="token" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                <motion.div key="license" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] ml-2">Neural Access Token</label>
-                    <input 
-                      type="text"
-                      value={accessToken}
-                      onChange={(e) => setAccessToken(e.target.value.toUpperCase())}
-                      placeholder="XXXXX-XXXX-XXXX"
-                      className="w-full bg-black/40 border border-[#333333] rounded-2xl p-4 text-sm font-mono tracking-widest focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none text-center"
-                    />
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] ml-2">Neural Access Code</label>
+                    <div className="relative">
+                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B]" />
+                      <input 
+                        type="password"
+                        value={accessToken}
+                        onChange={(e) => setAccessToken(e.target.value)}
+                        placeholder="ENTER ACCESS CODE"
+                        className="w-full bg-black/40 border border-[#333333] rounded-2xl p-4 pl-12 text-sm font-mono tracking-widest focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none"
+                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyToken()}
+                      />
+                    </div>
                   </div>
                   <button 
                     onClick={handleVerifyToken}
-                    disabled={authLoading || accessToken.length < 5}
+                    disabled={authLoading || accessToken.length < 4}
                     className="w-full bg-[#FF3B30] py-4 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all"
                   >
-                    {authLoading ? 'ESTABLISHING...' : 'AUTHORIZE ACCESS'}
+                    {authLoading ? 'VERIFYING...' : 'INITIALIZE LINK'}
                   </button>
-                  <button onClick={() => setView('landing')} className="w-full text-[10px] font-bold text-[#86868B] uppercase tracking-widest hover:text-white transition-colors">Return to Dashboard</button>
+                  <p className="text-[9px] text-center text-[#86868B] uppercase tracking-widest leading-relaxed">
+                    Access Code Required for Neural Synchronization
+                  </p>
                 </motion.div>
               </AnimatePresence>
 
@@ -695,7 +725,7 @@ const AppleStudio = () => {
                         Apple Studio Presents
                       </motion.div>
                       <h1 className="text-7xl md:text-9xl font-bold tracking-tighter leading-none">
-                        Smart <span className="text-[#FF3B30]">DM</span>'s
+                        Apple <span className="text-[var(--accent)]">Studio</span>
                       </h1>
                       <p className="text-xl md:text-2xl text-[#86868B] max-w-2xl mx-auto font-medium leading-relaxed">
                         The definitive neural engine for DeluxeMenus synthesis. <br />
@@ -742,7 +772,7 @@ const AppleStudio = () => {
 
              {/* Footer */}
              <footer className="h-20 flex items-center justify-between px-12 text-[10px] font-bold uppercase tracking-widest text-[#86868B] border-t border-white/5 opacity-40">
-                <span>© 2026 SmartDM Studio</span>
+                <span>© 2026 Apple Studio</span>
                 <div className="flex gap-8">
                    <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
                    <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
@@ -863,7 +893,9 @@ const AppleStudio = () => {
                    <button onClick={() => setView('landing')} className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] hover:text-white flex items-center gap-2 transition-colors">
                       <ChevronRight className="w-3 h-3 rotate-180" /> Dashboard
                    </button>
-                   <Settings className="w-4 h-4 text-[#86868B] hover:text-white cursor-pointer" />
+                   <button onClick={() => setSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-lg transition-all group" title="Studio Settings">
+                      <Settings className="w-4 h-4 text-[#86868B] group-hover:text-white transition-colors" />
+                   </button>
                 </div>
              </aside>
 
@@ -907,286 +939,199 @@ const AppleStudio = () => {
                               <LogOut className="w-3.5 h-3.5" />
                            </button>
                         </div>
-
-                        <div className="flex bg-black/40 p-1.5 rounded-xl border border-white/5">
-                          <button onClick={() => setActiveTab('code')} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'code' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'}`}>
-                            <FileCode className="w-3.5 h-3.5" /> Code
-                          </button>
-                          <button onClick={() => setActiveTab('preview')} disabled={!parsedMenu} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'preview' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'} ${!parsedMenu ? 'opacity-30 cursor-not-allowed' : ''}`}>
-                            <Eye className="w-3.5 h-3.5" /> GUI
-                          </button>
-                          <button onClick={() => setActiveTab('console')} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'console' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'}`}>
-                            <Monitor className="w-3.5 h-3.5" /> Console
-                          </button>
-                        </div>
                       </div>
                     </header>
 
-                    <main className="flex-1 overflow-y-auto custom-scrollbar bg-black relative p-8 lg:p-12">
-                      <div className="max-w-[1600px] mx-auto">
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
-                          {/* Controls */}
-                          <div className="space-y-12">
-                            <section className="space-y-6">
-                              <h3 className="text-xl font-bold flex items-center gap-3">
-                                <MessageSquare className="w-6 h-6 text-[#FF3B30]" /> Design Intent
-                              </h3>
-                              <div className="flex gap-4 mb-4">
-                                <button 
-                                  onClick={() => updateActiveMenu({ isExact: false })}
-                                  className={`flex-1 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest border transition-all ${!activeMenu.isExact ? 'bg-[#FF3B30]/10 border-[#FF3B30] text-[#FF3B30]' : 'bg-white/5 border-white/10 text-[#86868B]'}`}
-                                >
-                                  Standard Intent
-                                </button>
-                                <button 
-                                  onClick={() => updateActiveMenu({ isExact: true })}
-                                  className={`flex-1 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest border transition-all ${activeMenu.isExact ? 'bg-[#FF3B30]/10 border-[#FF3B30] text-[#FF3B30]' : 'bg-white/5 border-white/10 text-[#86868B]'}`}
-                                >
-                                  Exact Image Mode
-                                </button>
-                              </div>
-                              <div className="relative group/prompt">
-                                <textarea
-                                  value={activeMenu.prompt}
-                                  onChange={(e) => updateActiveMenu({ prompt: e.target.value })}
-                                  placeholder={activeMenu.isExact ? "Describe any extra details (commands, permissions)..." : "Describe your menu..."}
-                                  className="w-full min-h-[200px] p-6 pr-20 rounded-[2rem] bg-[#1C1C1E] border border-[#333333] focus:border-[#FF3B30]/40 focus:ring-8 focus:ring-[#FF3B30]/5 transition-all text-base leading-relaxed resize-none shadow-2xl"
-                                />
-                                <button 
-                                  onClick={toggleListening}
-                                  className={`absolute top-6 right-6 p-4 rounded-2xl border transition-all ${isListening ? 'bg-[#FF3B30] border-[#FF3B30] shadow-[0_0_20px_rgba(255,59,48,0.4)] animate-pulse' : 'bg-black/40 border-white/10 text-[#86868B] hover:text-[#FF3B30] hover:border-[#FF3B30]/40'}`}
-                                  title={isListening ? "Stop Dictation" : "Start Neural Dictation"}
-                                >
-                                  {isListening ? <Mic className="w-5 h-5 text-white" /> : <MicOff className="w-5 h-5" />}
-                                </button>
-                              </div>
-                            </section>
+                    <main className="flex-1 overflow-hidden bg-black relative flex flex-col">
+                      {/* Workspace Tabs */}
+                      <div className="h-16 px-10 border-b border-white/5 flex items-center gap-8 bg-[#0D0D0F] z-20 shrink-0">
+                         {['intent', 'builder', 'source'].map((tab) => (
+                            <button 
+                              key={tab}
+                              onClick={() => {
+                                setWorkspaceTab(tab as any);
+                                if (tab === 'source') setActiveTab('code');
+                                if (tab === 'builder') setActiveTab('preview');
+                              }}
+                              className={`relative h-full px-4 text-[10px] font-bold uppercase tracking-[0.2em] transition-all ${workspaceTab === tab ? 'text-white' : 'text-[#86868B] hover:text-white'}`}
+                            >
+                               {tab}
+                               {workspaceTab === tab && (
+                                 <motion.div layoutId="wTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF3B30] shadow-[0_0_10px_#FF3B30]" />
+                               )}
+                            </button>
+                         ))}
+                         <div className="flex-1" />
+                         <div className="flex items-center gap-4">
+                            <button 
+                              onClick={handleGenerate}
+                              disabled={isGenerating || !activeMenu.prompt.trim()}
+                              className={`px-6 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
+                                isGenerating || !activeMenu.prompt.trim() ? 'bg-white/5 opacity-30 text-[#86868B]' : 'bg-[#FF3B30] text-white hover:scale-105 active:scale-95 shadow-[0_5px_20px_rgba(255,59,48,0.3)]'
+                              }`}
+                            >
+                              {isGenerating ? 'Synthesizing...' : 'Apply Blueprint'}
+                            </button>
+                         </div>
+                      </div>
 
-                            {activeMenu.isExact && (
-                              <section className="space-y-8 animate-in fade-in slide-in-from-top-4 duration-500">
-                                <div className="space-y-4">
-                                  <h3 className="text-xl font-bold flex items-center gap-3 text-orange-500">
-                                    <Monitor className="w-6 h-6" /> GUI Vision
-                                  </h3>
-                                  <div className="relative group/upload h-64 bg-[#1C1C1E] border-2 border-dashed border-[#333333] hover:border-orange-500/50 rounded-[3rem] transition-all flex flex-col items-center justify-center gap-4 overflow-hidden">
-                                    {activeMenu.screenshot ? (
-                                      <>
-                                        <img src={activeMenu.screenshot} className="absolute inset-0 w-full h-full object-cover opacity-30 grayscale hover:grayscale-0 transition-all" />
-                                        <div className="relative z-10 flex flex-col items-center gap-2">
-                                          <Check className="w-8 h-8 text-green-500" />
-                                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white">Image Linked</span>
-                                          <button onClick={() => updateActiveMenu({ screenshot: '' })} className="mt-2 px-4 py-2 bg-red-500/20 text-red-500 rounded-full text-[8px] font-bold uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">Replace Image</button>
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
-                                          <Plus className="w-8 h-8 text-[#86868B]" />
-                                        </div>
-                                        <p className="text-[10px] font-bold uppercase tracking-widest text-[#86868B]">Drop GUI Screenshot</p>
-                                        <input 
-                                          type="file" 
-                                          accept="image/*"
-                                          onChange={(e) => {
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-8 lg:p-12 relative">
+                        <div className="max-w-[1600px] mx-auto">
+                          <AnimatePresence mode="wait">
+                            {workspaceTab === 'intent' && (
+                              <motion.div key="intent" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-12">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                                  <section className="space-y-6">
+                                    <div className="flex items-center justify-between">
+                                      <h3 className="text-xl font-bold flex items-center gap-3">
+                                        <MessageSquare className="w-6 h-6 text-[#FF3B30]" /> Neural Intent
+                                      </h3>
+                                      <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 scale-90 origin-right">
+                                        <button onClick={() => updateActiveMenu({ isExact: false })} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${!activeMenu.isExact ? 'bg-[#FF3B30] text-white' : 'text-[#86868B]'}`}>Synthesis</button>
+                                        <button onClick={() => updateActiveMenu({ isExact: true })} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${activeMenu.isExact ? 'bg-[#FF3B30] text-white' : 'text-[#86868B]'}`}>Vision</button>
+                                      </div>
+                                    </div>
+                                    <textarea
+                                      value={activeMenu.prompt}
+                                      onChange={(e) => updateActiveMenu({ prompt: e.target.value })}
+                                      placeholder="Describe your menu's logic, commands, and layout..."
+                                      className="w-full h-[400px] p-10 rounded-[3rem] bg-[#1C1C1E] border border-[#333333] focus:border-[#FF3B30]/40 transition-all text-lg leading-relaxed resize-none shadow-2xl selection:bg-[#FF3B30]/20"
+                                    />
+                                  </section>
+
+                                  <section className="space-y-8 flex flex-col">
+                                    <div className="flex items-center gap-3">
+                                      <BookOpen className="w-6 h-6 text-[#86868B]" />
+                                      <h3 className="text-xl font-bold">Foundation & Reference</h3>
+                                    </div>
+                                    <div className="flex-1 flex flex-col gap-6">
+                                      <textarea
+                                        value={activeMenu.referenceMenu}
+                                        onChange={(e) => updateActiveMenu({ referenceMenu: e.target.value })}
+                                        placeholder="Paste foundations or template YAML here..."
+                                        className="flex-1 p-8 rounded-[3rem] bg-[#1C1C1E] border border-[#333333] focus:border-[#FF3B30]/40 transition-all font-mono text-xs leading-relaxed resize-none shadow-2xl opacity-60 hover:opacity-100"
+                                      />
+                                      {activeMenu.isExact && (
+                                        <div className="h-48 rounded-[2rem] bg-orange-500/5 border border-dashed border-orange-500/20 flex flex-col items-center justify-center p-6 relative overflow-hidden group cursor-pointer shadow-lg hover:bg-orange-500/10 transition-all">
+                                          {activeMenu.screenshot ? (
+                                            <img src={activeMenu.screenshot} className="absolute inset-0 w-full h-full object-cover opacity-20" />
+                                          ) : (
+                                            <Plus className="w-8 h-8 text-orange-500/40 group-hover:scale-110 transition-transform" />
+                                          )}
+                                          <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500 mt-2 z-10">{activeMenu.screenshot ? 'Vision Reference Active' : 'Add Vision Reference'}</p>
+                                          <input type="file" accept="image/*" onChange={(e) => {
                                             const file = e.target.files?.[0];
                                             if (file) {
                                               const reader = new FileReader();
                                               reader.onloadend = () => updateActiveMenu({ screenshot: reader.result as string });
                                               reader.readAsDataURL(file);
                                             }
-                                          }}
-                                          className="absolute inset-0 opacity-0 cursor-pointer"
-                                        />
-                                      </>
-                                    )}
-                                  </div>
+                                          }} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </section>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="p-6 bg-[#1C1C1E] border border-[#333333] rounded-[2rem] space-y-4">
-                                    <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] block">Background Filter</label>
-                                    <input 
-                                      value={activeMenu.fillerItem}
-                                      onChange={(e) => updateActiveMenu({ fillerItem: e.target.value })}
-                                      placeholder="e.g. BLACK_STAINED_GLASS_PANE"
-                                      className="w-full bg-black/40 border-none rounded-xl p-4 text-xs font-mono focus:ring-1 focus:ring-orange-500 transition-all"
-                                    />
-                                    <p className="text-[8px] text-[#86868B] leading-relaxed italic">The AI will use this item to fill all non-important slots detected in the image.</p>
-                                  </div>
-                                  <div className="p-6 bg-[#1C1C1E] border border-[#333333] rounded-[2rem] space-y-4">
-                                     <div className="flex items-center justify-between">
-                                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B]">Anchor Slots</label>
-                                        <button 
-                                          onClick={() => updateActiveMenu({ anchorSlots: [...(activeMenu.anchorSlots || []), { slot: 0, description: '' }] })}
-                                          className="text-[10px] text-orange-500 font-bold"
-                                        >
-                                          + ADD
-                                        </button>
-                                     </div>
-                                     <div className="space-y-3 max-h-48 overflow-y-auto custom-scrollbar pr-2">
-                                        {activeMenu.anchorSlots?.map((slot, idx) => (
-                                          <div key={idx} className="flex gap-2">
-                                            <input 
-                                              type="number"
-                                              value={slot.slot}
-                                              onChange={(e) => {
-                                                const newSlots = [...(activeMenu.anchorSlots || [])];
-                                                newSlots[idx].slot = parseInt(e.target.value);
-                                                updateActiveMenu({ anchorSlots: newSlots });
-                                              }}
-                                              className="w-12 bg-black/40 border-none rounded-lg p-2 text-xs font-mono text-center"
-                                            />
-                                            <input 
-                                              value={slot.description}
-                                              onChange={(e) => {
-                                                const newSlots = [...(activeMenu.anchorSlots || [])];
-                                                newSlots[idx].description = e.target.value;
-                                                updateActiveMenu({ anchorSlots: newSlots });
-                                              }}
-                                              placeholder="Menu Name/Function"
-                                              className="flex-1 bg-black/40 border-none rounded-lg p-2 text-xs"
-                                            />
-                                            <button 
-                                              onClick={() => {
-                                                const newSlots = activeMenu.anchorSlots?.filter((_, i) => i !== idx);
-                                                updateActiveMenu({ anchorSlots: newSlots });
-                                              }}
-                                              className="text-red-500 p-2"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        ))}
-                                     </div>
-                                  </div>
+                                <div className="p-8 rounded-[3rem] bg-white/[0.02] border border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
+                                   <div className="flex items-center gap-6">
+                                      <div className="w-16 h-16 rounded-[1.5rem] bg-[#FF3B30]/10 flex items-center justify-center">
+                                         <Monitor className="w-8 h-8 text-[#FF3B30]" />
+                                      </div>
+                                      <div>
+                                         <h4 className="text-lg font-bold">Neural Verification</h4>
+                                         <p className="text-xs text-[#86868B]">Ensure your intentions align with the DeluxeMenus core API.</p>
+                                      </div>
+                                   </div>
+                                   <div className="flex gap-4">
+                                      <button onClick={() => updateActiveMenu({ prompt: '' })} className="px-6 py-3 rounded-xl border border-white/10 text-xs font-bold hover:bg-white/5 transition-all">CLEAR INTENT</button>
+                                      <button onClick={handleGenerate} className="px-10 py-3 rounded-xl bg-white text-black text-xs font-bold hover:bg-white/90 transition-all">GENERATE BLUEPRINT</button>
+                                   </div>
                                 </div>
-                              </section>
+                              </motion.div>
                             )}
-
-                            <section className="space-y-6">
-                              <h3 className="text-xl font-bold flex items-center gap-3 text-[#86868B]">
-                                <BookOpen className="w-6 h-6" /> Structural Reference
-                              </h3>
-                              <textarea
-                                value={activeMenu.referenceMenu}
-                                onChange={(e) => updateActiveMenu({ referenceMenu: e.target.value })}
-                                placeholder="Paste reference YAML..."
-                                className="w-full min-h-[160px] p-6 rounded-[2rem] bg-[#1C1C1E] border border-[#333333] focus:border-[#FF3B30]/40 transition-all font-mono text-sm leading-relaxed resize-none shadow-2xl"
-                              />
-                            </section>
-
-                            <div className="flex items-center justify-between pt-8 border-t border-[#333333]">
-                               <button onClick={() => updateActiveMenu({ prompt: '', rawConfig: '', referenceMenu: '' })} className="text-xs font-bold uppercase tracking-widest text-[#86868B] hover:text-white transition-colors flex items-center gap-2">
-                                  <Trash2 className="w-4 h-4" /> Reset 
-                               </button>
-                               <button 
-                                onClick={handleGenerate}
-                                disabled={isGenerating || !activeMenu.prompt.trim()}
-                                className={`px-12 py-5 rounded-full font-bold shadow-2xl transition-all ${
-                                  isGenerating || !activeMenu.prompt.trim() ? 'bg-white/5 opacity-50' : 'bg-[#FF3B30] hover:bg-[#FF453A] active:scale-95'
-                                }`}
-                               >
-                                 {isGenerating ? 'FORGING...' : 'GENERATE CONFIG'}
-                               </button>
-                            </div>
-                            {error && <p className="text-[#FF453A] font-bold text-xs uppercase tracking-widest bg-red-950/20 p-4 rounded-xl border border-red-900/40">{error}</p>}
-                          </div>
+                          </AnimatePresence>
 
                           {/* Output Area */}
                           <div className="relative flex flex-col h-full lg:min-h-[900px]">
                             <AnimatePresence mode="wait">
-                               {activeTab === 'code' && (
-                                 <motion.div key="code" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex-1 bg-[#1C1C1E] rounded-[3rem] border border-[#333333] flex flex-col shadow-2xl overflow-hidden group">
-                                    <div className="px-10 py-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                                       <div className="flex items-center gap-3">
-                                          <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-widest">Configuration Editor</span>
-                                          <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border transition-colors ${isGenerating ? 'bg-orange-500/10 border-orange-500/20' : 'bg-green-500/10 border-green-500/20'}`}>
-                                            <div className={`w-1 h-1 rounded-full animate-pulse ${isGenerating ? 'bg-orange-500' : 'bg-green-500'}`} />
-                                            <span className={`text-[8px] font-bold uppercase tracking-tighter ${isGenerating ? 'text-orange-500' : 'text-green-500'}`}>
-                                              {isGenerating ? 'Forging...' : 'Live Edit Ready'}
-                                            </span>
-                                          </div>
-                                       </div>
-                                       {activeMenu.rawConfig && (
-                                         <div className="flex items-center gap-4">
-                                            <button 
-                                              onClick={handleCopy} 
-                                              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#86868B] hover:text-[#FF3B30] transition-colors"
-                                            >
-                                              {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                              {copied ? 'Copied' : 'Copy'}
-                                            </button>
-                                         </div>
-                                       )}
-                                    </div>
-                                    <div className="flex-1 relative">
-                                      {activeMenu.rawConfig || isGenerating ? (
+                               {workspaceTab === 'source' && (
+                                 <motion.div key="source" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col gap-8">
+                                   <div className="flex-1 flex gap-8 min-h-[600px]">
+                                     <div className="flex-1 bg-[#1C1C1E] border border-[#333333] rounded-[3rem] shadow-2xl flex flex-col overflow-hidden relative">
+                                        <div className="absolute top-8 right-8 z-10 flex gap-2">
+                                          <button onClick={handleCopy} className="p-3 bg-black/40 hover:bg-black/60 rounded-xl border border-white/5 transition-all text-[#86868B] hover:text-white">
+                                             {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                                          </button>
+                                        </div>
                                         <textarea 
                                           value={activeMenu.rawConfig.replace(/```yaml\n|```/g, '')}
                                           onChange={(e) => updateActiveMenu({ rawConfig: e.target.value })}
-                                          spellCheck={false}
-                                          className="w-full h-full p-10 bg-transparent border-none focus:ring-0 font-mono text-sm leading-[1.8] text-white/90 resize-none selection:bg-[#FF3B30]/30 custom-scrollbar"
-                                          placeholder="Enter YAML configuration here..."
+                                          className="flex-1 p-12 bg-transparent text-white font-mono text-sm leading-relaxed resize-none focus:ring-0 border-none outline-none custom-scrollbar"
                                         />
-                                      ) : (
-                                        <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4">
-                                           <Terminal className="w-16 h-16" />
-                                           <p className="font-bold uppercase tracking-widest">Awaiting Intent or Input</p>
+                                     </div>
+                                     <div className="w-80 hidden xl:flex flex-col gap-6">
+                                        <div className="flex-1 bg-[#1C1C1E] border border-[#333333] rounded-[2.5rem] p-8 flex flex-col gap-6">
+                                           <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#FF3B30]">Events Console</h4>
+                                           <div className="flex-1 bg-black/40 rounded-2xl p-6 font-mono text-[10px] overflow-y-auto custom-scrollbar space-y-3">
+                                              {consoleLogs.map((log, i) => (
+                                                <div key={i} className="flex gap-2 opacity-60">
+                                                   <span className="text-[#444446]">{log.time}</span>
+                                                   <span className="text-white/80">{log.text}</span>
+                                                </div>
+                                              ))}
+                                           </div>
                                         </div>
-                                      )}
-                                      
-                                      {isGenerating && (
-                                        <div className="absolute inset-0 bg-[#1C1C1E]/60 backdrop-blur-[4px] flex items-center justify-center pointer-events-none z-10 rounded-[3rem]">
-                                          <div className="flex flex-col items-center gap-6">
-                                            <div className="flex items-end gap-1.5 h-8">
-                                              <motion.div animate={{ height: [4, 24, 4] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1.5 bg-[#FF3B30] rounded-full" />
-                                              <motion.div animate={{ height: [12, 32, 12] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 bg-[#FF3B30] rounded-full" />
-                                              <motion.div animate={{ height: [8, 20, 8] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 bg-[#FF3B30] rounded-full" />
-                                            </div>
-                                            <div className="flex flex-col items-center gap-1">
-                                              <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#FF3B30]">Synthesizing Engine</span>
-                                              <span className="text-[8px] text-[#86868B] font-mono">NEURAL_LINK_STABLE</span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
+                                     </div>
+                                   </div>
                                  </motion.div>
                                )}
 
-                               {activeTab === 'preview' && (
-                                 <motion.div key="preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex-1 bg-[#1C1C1E] rounded-[3rem] border border-[#333333] flex flex-col items-center justify-center p-12 shadow-2xl gap-10">
-                                    <div className="w-full max-w-sm bg-[#2C2C2E] border border-[#3D3D3F] rounded-2xl overflow-hidden shadow-2xl">
-                                      <div className="bg-[#3D3D3F] px-6 py-4 flex justify-center border-b border-black/20 font-bold text-xs">
-                                        {parsedMenu?.menu_title || 'Chest'}
-                                      </div>
-                                      <div className="p-4 grid grid-cols-9 gap-1.5 bg-[#8B8B8B]">
-                                        {Array.from({ length: parsedMenu?.size || 27 }).map((_, i) => {
-                                          const itemKey = Object.keys(parsedMenu?.items || {}).find(key => parsedMenu.items[key].slot === i);
-                                          const item = itemKey ? parsedMenu.items[itemKey] : null;
-                                          return (
-                                            <div 
-                                              key={i} 
-                                              className={`aspect-square w-full rounded border-black/10 flex items-center justify-center relative group cursor-pointer ${item ? 'bg-[#C6C6C6] hover:bg-white transition-all transform hover:scale-105 active:translate-y-0.5' : 'bg-[#C6C6C6] opacity-30 cursor-default'}`}
-                                              onClick={() => item && handleSlotClick(item, false)}
-                                            >
-                                              {item && (
-                                                <>
-                                                  <LayoutGrid className="w-5 h-5 text-gray-700" />
-                                                  <div className="absolute z-50 left-1/2 -translate-x-1/2 bottom-full mb-4 w-48 p-3 bg-black/95 rounded-xl text-[10px] opacity-0 group-hover:opacity-100 transition-all pointer-events-none border border-white/10 shadow-2xl">
-                                                    <p className="text-[#FF3B30] font-bold mb-1">{item.display_name?.replace(/&[0-9a-fk-orx]/g, '')}</p>
-                                                    {item.lore?.map((line: string, li: number) => <p key={li} className="text-white/60">{line.replace(/&[0-9a-fk-orx]/g, '')}</p>)}
-                                                  </div>
-                                                </>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
+                               {workspaceTab === 'builder' && (
+                                 <motion.div key="builder" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-12 py-10">
+                                    <div className="flex items-center gap-10">
+                                       <div className="relative group">
+                                          <div className="absolute -inset-10 bg-[#FF3B30]/5 blur-[80px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                                          <div className="w-full max-w-sm bg-[#1C1C1E] border border-white/10 rounded-3xl overflow-hidden shadow-[0_50px_100px_rgba(0,0,0,0.6)] relative z-10 transition-transform hover:scale-[1.02]">
+                                             <div className="bg-[#2C2C2E] px-8 py-5 border-b border-white/5 flex items-center justify-between">
+                                               <span className="text-[10px] uppercase tracking-widest font-bold text-[#86868B]">{parsedMenu?.menu_title || 'Chest'}</span>
+                                               <div className="flex gap-1.5">
+                                                  <div className="w-2 h-2 rounded-full bg-white/10" />
+                                                  <div className="w-2 h-2 rounded-full bg-white/10" />
+                                                  <div className="w-2 h-2 rounded-full bg-white/10" />
+                                               </div>
+                                             </div>
+                                             <div className="p-4 grid grid-cols-9 gap-1 shadow-inner bg-[#2C2C2E]/50">
+                                               {Array.from({ length: parsedMenu?.size || 54 }).map((_, i) => {
+                                                 const itemKey = Object.keys(parsedMenu?.items || {}).find(key => parsedMenu.items[key].slot === i);
+                                                 const item = itemKey ? parsedMenu.items[itemKey] : null;
+                                                 return (
+                                                   <div 
+                                                     key={i} 
+                                                     className={`aspect-square w-full rounded-sm border transition-all relative group cursor-pointer flex items-center justify-center ${item ? 'bg-[#3D3D3F] border-[#555557] hover:bg-[#4D4D4F] hover:border-[#FF3B30]' : 'bg-[#252527] border-[#333333] hover:border-white/10'}`}
+                                                     onClick={() => item && handleSlotClick(item, false)}
+                                                   >
+                                                     {item ? (
+                                                       <div className="w-full h-full flex flex-col items-center justify-center gap-0.5">
+                                                         <LayoutGrid className="w-4 h-4 text-[#86868B] group-hover:text-white" />
+                                                         <span className="text-[6px] font-bold text-[#FF3B30] opacity-0 group-hover:opacity-100">{item.slot}</span>
+                                                       </div>
+                                                     ) : (
+                                                       <span className="text-[8px] font-mono text-[#333333] group-hover:text-[#444446]">{i}</span>
+                                                     )}
+                                                   </div>
+                                                 );
+                                               })}
+                                             </div>
+                                          </div>
+                                       </div>
                                     </div>
-                                    <div className="text-center space-y-2 opacity-40">
-                                       <Eye className="w-6 h-6 mx-auto mb-2 text-[#FF3B30]" />
-                                       <p className="font-bold uppercase tracking-widest text-[10px]">Real-time Simulation</p>
+                                    <div className="flex flex-col gap-4 text-center max-w-sm">
+                                      <div className="flex items-center gap-3 justify-center">
+                                         <Zap className="w-4 h-4 text-[#FF3B30]" />
+                                         <h4 className="font-bold uppercase tracking-[0.2em] text-xs text-white">Interactive Blueprint</h4>
+                                      </div>
+                                      <p className="text-xs text-[#86868B] leading-relaxed">This GUI is reactive. Left-click any slot to simulate logic, or use the Source tab for manual overrides.</p>
                                     </div>
                                  </motion.div>
                                )}
@@ -1282,6 +1227,110 @@ const AppleStudio = () => {
 
       {/* Global Project Creation Modal */}
       <AnimatePresence>
+        {/* Settings Modal */}
+        <AnimatePresence>
+          {settingsOpen && (
+            <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="max-w-xl w-full bg-[#1C1C1E] border border-[#333333] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              >
+                 <header className="p-8 border-b border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                       <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center">
+                          <SlidersHorizontal className="w-5 h-5 text-[#FF3B30]" />
+                       </div>
+                       <div>
+                          <h2 className="text-xl font-bold uppercase tracking-wider leading-none">Studio Settings</h2>
+                          <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-widest mt-1">Configure your workspace environment</span>
+                       </div>
+                    </div>
+                    <button onClick={() => setSettingsOpen(false)} className="p-2 hover:bg-white/5 rounded-lg transition-all text-[#86868B] hover:text-white">
+                       <Plus className="w-5 h-5 rotate-45" />
+                    </button>
+                 </header>
+
+                 <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+                    <section className="space-y-6">
+                       <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#FF3B30]">Interface Configuration</h3>
+                       <div className="space-y-4">
+                          <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                             <div className="space-y-1">
+                                <p className="text-sm font-bold">Accent Color</p>
+                                <p className="text-[10px] text-[#86868B]">Global brand and highlight color</p>
+                             </div>
+                             <div className="flex gap-2">
+                                {['#FF3B30', '#007AFF', '#34C759', '#FF9500'].map(c => (
+                                  <button 
+                                    key={c}
+                                    onClick={() => setThemeColor(c)}
+                                    className={`w-6 h-6 rounded-full border-2 transition-all ${themeColor === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                    style={{ backgroundColor: c }}
+                                  />
+                                ))}
+                             </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                             <div className="space-y-1">
+                                <p className="text-sm font-bold">Syntax Highlighting</p>
+                                <p className="text-[10px] text-[#86868B]">Enable colorful YAML code themes</p>
+                             </div>
+                             <button 
+                              onClick={() => setSyntaxHighlighting(!syntaxHighlighting)}
+                              className={`w-12 h-6 rounded-full transition-all relative ${syntaxHighlighting ? 'bg-[#FF3B30]' : 'bg-white/10'}`}
+                             >
+                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${syntaxHighlighting ? 'left-7' : 'left-1'}`} />
+                             </button>
+                          </div>
+                       </div>
+                    </section>
+
+                    <section className="space-y-6">
+                       <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#FF3B30]">Core Engine Settings</h3>
+                       <div className="space-y-4">
+                          <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                             <div className="space-y-1">
+                                <p className="text-sm font-bold">Neural Auto-Cloud</p>
+                                <p className="text-[10px] text-[#86868B]">Automatically sync changes to local storage</p>
+                             </div>
+                             <button 
+                              onClick={() => setAutoSave(!autoSave)}
+                              className={`w-12 h-6 rounded-full transition-all relative ${autoSave ? 'bg-[#FF3B30]' : 'bg-white/10'}`}
+                             >
+                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoSave ? 'left-7' : 'left-1'}`} />
+                             </button>
+                          </div>
+
+                          <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
+                              <div className="space-y-1">
+                                <p className="text-sm font-bold">Model Selection</p>
+                                <p className="text-[10px] text-[#86868B]">Preferred neural synthesis engine</p>
+                              </div>
+                              <select className="bg-black/40 border-none rounded-lg text-[10px] font-bold p-2 focus:ring-0">
+                                <option>Gemini 1.5 Flash (Default)</option>
+                                <option>Gemini 1.5 Pro</option>
+                              </select>
+                          </div>
+                       </div>
+                    </section>
+                 </div>
+
+                 <footer className="p-8 border-t border-white/5 bg-black/20 flex justify-end">
+                    <button 
+                      onClick={() => setSettingsOpen(false)}
+                      className="px-8 py-3 bg-[#FF3B30] rounded-2xl text-[10px] font-bold uppercase tracking-[0.2em] text-white hover:scale-105 transition-all shadow-xl"
+                    >
+                      Apply Changes
+                    </button>
+                 </footer>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         {isModalOpen && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -1293,64 +1342,117 @@ const AppleStudio = () => {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-[#1C1C1E] border border-white/10 w-full max-w-lg rounded-[3rem] p-12 shadow-[0_30px_100px_rgba(0,0,0,0.5)] space-y-10"
+              className="bg-[#1C1C1E] border border-white/10 w-full max-w-2xl rounded-[3rem] p-10 lg:p-12 shadow-[0_30px_100px_rgba(0,0,0,0.5)] flex flex-col gap-8 min-h-[500px]"
              >
-                <div className="space-y-4">
-                   <h2 className="text-4xl font-bold tracking-tight text-white">Create New Project</h2>
-                   <p className="text-[#86868B] text-lg font-medium">Define your new workspace category.</p>
-                </div>
-
-                <div className="space-y-6">
-                   <div className="space-y-3">
-                      <label className="text-xs font-bold uppercase tracking-widest text-[#86868B] ml-4">Project Name</label>
-                      <input 
-                        autoFocus
-                        value={newProjectName}
-                        onChange={(e) => setNewProjectName(e.target.value)}
-                        placeholder="e.g. Factions Coin Shop"
-                        className="w-full bg-[#2C2C2E] border-none rounded-2xl p-6 text-xl font-bold text-white placeholder:text-white/10 focus:ring-4 focus:ring-[#FF3B30]/20 transition-all outline-none"
-                        onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
-                      />
-                   </div>
-
-                   <div 
-                    onClick={() => setIsExactMode(!isExactMode)}
-                    className={`p-6 rounded-3xl border-2 transition-all cursor-pointer flex items-center justify-between group ${isExactMode ? 'bg-[#FF3B30]/10 border-[#FF3B30]' : 'bg-[#2C2C2E]/50 border-white/5 hover:border-white/10'}`}
-                   >
-                      <div className="space-y-1">
-                         <h4 className={`font-bold transition-colors ${isExactMode ? 'text-[#FF3B30]' : 'text-white'}`}>Exact Image Mode</h4>
-                         <p className="text-[10px] text-[#86868B] font-medium">Map GUI screenshots to pixel-perfect code.</p>
-                      </div>
-                      <div className={`w-12 h-6 rounded-full relative transition-colors ${isExactMode ? 'bg-[#FF3B30]' : 'bg-[#3D3D3F]'}`}>
-                         <motion.div 
-                          animate={{ x: isExactMode ? 24 : 4 }}
-                          className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg" 
-                         />
+                <header className="flex items-center justify-between border-b border-white/5 pb-8">
+                   <div className="space-y-1">
+                      <h2 className="text-3xl font-bold tracking-tight text-white uppercase tracking-wider">Project Wizard</h2>
+                      <div className="flex items-center gap-2">
+                         {['name', 'intent', 'refs'].map((s, i) => (
+                            <div key={s} className="flex items-center gap-2">
+                               <div className={`w-2 h-2 rounded-full transition-all ${wizardStep === s ? 'bg-[#FF3B30] scale-125' : 'bg-[#333333]'}`} />
+                               {i < 2 && <div className="w-4 h-px bg-white/10" />}
+                            </div>
+                         ))}
+                         <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-widest ml-2">Step {wizardStep === 'name' ? '1' : wizardStep === 'intent' ? '2' : '3'} of 3</span>
                       </div>
                    </div>
-
-                   <div className="flex gap-4 p-4 bg-white/5 rounded-2xl items-center border border-white/5">
-                      <div className="w-10 h-10 rounded-full bg-[#FF3B30]/10 flex items-center justify-center shrink-0">
-                        <Box className="w-5 h-5 text-[#FF3B30]" />
-                      </div>
-                      <p className="text-xs text-[#86868B] leading-relaxed">Projects act as containers for related menus. You can manage multiple configs within one project.</p>
-                   </div>
-                </div>
-
-                <div className="flex gap-4">
-                   <button 
-                    onClick={() => setIsModalOpen(false)}
-                    className="flex-1 py-5 rounded-full font-bold text-sm bg-white/5 hover:bg-white/10 transition-colors text-white"
-                   >
-                    CANCEL
+                   <button onClick={() => { setIsModalOpen(false); setWizardStep('name'); }} className="p-2 hover:bg-white/5 rounded-lg transition-all text-[#86868B] hover:text-white">
+                      <Plus className="w-6 h-6 rotate-45" />
                    </button>
+                </header>
+
+                <main className="flex-1">
+                   <AnimatePresence mode="wait">
+                      {wizardStep === 'name' && (
+                        <motion.div key="name" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
+                           <div className="space-y-4">
+                              <h3 className="text-xl font-bold">What's the name of your project?</h3>
+                              <p className="text-sm text-[#86868B]">This will be the container for all your menus (e.g. "Main Lobby", "Survival Hub").</p>
+                           </div>
+                           <div className="space-y-3">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] ml-4">Project Identity</label>
+                              <input 
+                                autoFocus
+                                value={wizardData.name}
+                                onChange={(e) => setWizardData(prev => ({ ...prev, name: e.target.value }))}
+                                placeholder="Enter project name..."
+                                className="w-full bg-[#2C2C2E] border-none rounded-2xl p-6 text-xl font-bold text-white placeholder:text-white/10 focus:ring-4 focus:ring-[#FF3B30]/20 transition-all outline-none"
+                                onKeyDown={(e) => e.key === 'Enter' && wizardData.name.trim() && setWizardStep('intent')}
+                              />
+                           </div>
+                           <div className="p-6 rounded-3xl bg-white/5 border border-white/5 flex items-center justify-between group">
+                              <div className="space-y-1">
+                                 <h4 className="font-bold">Neural Engine Mode</h4>
+                                 <p className="text-[10px] text-[#86868B]">Standard Synthesis or Exact Vision Engine</p>
+                              </div>
+                              <div className="flex bg-black/40 p-1.5 rounded-xl border border-white/5">
+                                 <button onClick={() => setWizardData(prev => ({ ...prev, isExact: false }))} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${!wizardData.isExact ? 'bg-[#FF3B30] text-white shadow-lg' : 'text-[#86868B] hover:text-white'}`}>Standard</button>
+                                 <button onClick={() => setWizardData(prev => ({ ...prev, isExact: true }))} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${wizardData.isExact ? 'bg-[#FF3B30] text-white shadow-lg' : 'text-[#86868B] hover:text-white'}`}>Vision</button>
+                              </div>
+                           </div>
+                        </motion.div>
+                      )}
+
+                      {wizardStep === 'intent' && (
+                        <motion.div key="intent" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
+                           <div className="space-y-4">
+                              <h3 className="text-xl font-bold">Describe your menu intent</h3>
+                              <p className="text-sm text-[#86868B]">Tell the engine what you want to create or edit.</p>
+                           </div>
+                           <div className="space-y-3">
+                              <textarea
+                                autoFocus
+                                value={wizardData.prompt}
+                                onChange={(e) => setWizardData(prev => ({ ...prev, prompt: e.target.value }))}
+                                placeholder="e.g. A ranks menu with 5 ranks, clicking them upgrades your rank if you have enough money..."
+                                className="w-full h-48 bg-[#2C2C2E] border-none rounded-[2rem] p-6 text-base text-white placeholder:text-white/10 focus:ring-4 focus:ring-[#FF3B30]/20 transition-all outline-none resize-none"
+                              />
+                           </div>
+                        </motion.div>
+                      )}
+
+                      {wizardStep === 'refs' && (
+                        <motion.div key="refs" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
+                           <div className="space-y-4">
+                              <h3 className="text-xl font-bold">Structural Reference (Optional)</h3>
+                              <p className="text-sm text-[#86868B]">Paste existing DeluxeMenus YAML to guide the neural engine.</p>
+                           </div>
+                           <div className="space-y-3">
+                              <textarea
+                                autoFocus
+                                value={wizardData.reference}
+                                onChange={(e) => setWizardData(prev => ({ ...prev, reference: e.target.value }))}
+                                placeholder="Paste YAML here..."
+                                className="w-full h-48 bg-[#2C2C2E] border-none rounded-[2rem] p-6 text-sm font-mono text-white placeholder:text-white/10 focus:ring-4 focus:ring-[#FF3B30]/20 transition-all outline-none resize-none"
+                              />
+                           </div>
+                        </motion.div>
+                      )}
+                   </AnimatePresence>
+                </main>
+
+                <footer className="flex gap-4 pt-8 border-t border-white/5">
+                   {wizardStep !== 'name' && (
+                     <button 
+                      onClick={() => setWizardStep(wizardStep === 'intent' ? 'name' : 'intent')}
+                      className="px-8 py-4 rounded-2xl font-bold text-xs bg-white/5 hover:bg-white/10 transition-colors text-[#86868B] hover:text-white"
+                     >
+                      BACK
+                     </button>
+                   )}
                    <button 
-                    onClick={handleCreateProject}
-                    className="flex-1 py-5 rounded-full font-bold text-sm bg-[#FF3B30] hover:bg-[#FF453A] transition-colors shadow-lg active:scale-95 text-white"
+                    onClick={() => {
+                      if (wizardStep === 'name') setWizardStep('intent');
+                      else if (wizardStep === 'intent') setWizardStep('refs');
+                      else handleCreateProject();
+                    }}
+                    disabled={wizardStep === 'name' && !wizardData.name.trim()}
+                    className="flex-1 py-4 rounded-2xl font-bold text-xs bg-[#FF3B30] hover:bg-[#FF453A] disabled:opacity-30 transition-all shadow-[0_10px_30px_rgba(255,59,48,0.3)] text-white"
                    >
-                    CREATE PROJECT
+                    {wizardStep === 'refs' ? 'INITIALIZE STUDIO' : 'NEXT STEP'}
                    </button>
-                </div>
+                </footer>
              </motion.div>
           </motion.div>
         )}
