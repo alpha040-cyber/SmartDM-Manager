@@ -1,6 +1,6 @@
 {
   "name": "Smart DM's",
   "description": "Apple Studio presents: Smart DM's - An AI-powered DeluxeMenus configuration generator.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": []
 }

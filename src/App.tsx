@@ -26,7 +26,9 @@ import {
   Clock,
   LogOut,
   Hash,
-  User
+  User,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
@@ -61,6 +63,8 @@ const AppleStudio = () => {
   // Auth & Licensing
   const [authStep, setAuthStep] = useState<AuthStep>('license');
   const [accessToken, setAccessToken] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [recognition, setRecognition] = useState<any>(null);
   const [systemStatus, setSystemStatus] = useState<{ maintenance: boolean; maintenanceMessage: string } | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
@@ -180,6 +184,55 @@ const AppleStudio = () => {
         })
       };
     }));
+  };
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recog = new SpeechRecognition();
+      recog.continuous = true;
+      recog.interimResults = true;
+      recog.lang = 'en-US';
+
+      recog.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (activeMenu) {
+          updateActiveMenu({ prompt: activeMenu.prompt + ' ' + transcript });
+        }
+      };
+
+      recog.onend = () => setIsListening(false);
+      recog.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      setRecognition(recog);
+    }
+  }, [activeMenuId]);
+
+  const toggleListening = () => {
+    if (!recognition) {
+      setNotification({ message: 'Speech recognition not supported in this browser.', type: 'error' });
+      return;
+    }
+
+    if (isListening) {
+      recognition.stop();
+      setIsListening(false);
+      setNotification({ message: 'Neural dictation offline.', type: 'success' });
+    } else {
+      try {
+        recognition.start();
+        setIsListening(true);
+        setNotification({ message: 'Neural dictation active...', type: 'success' });
+      } catch (e) {
+        console.error(e);
+      }
+    }
   };
 
   const handleCreateProject = () => {
@@ -847,12 +900,21 @@ const AppleStudio = () => {
                                   Exact Image Mode
                                 </button>
                               </div>
-                              <textarea
-                                value={activeMenu.prompt}
-                                onChange={(e) => updateActiveMenu({ prompt: e.target.value })}
-                                placeholder={activeMenu.isExact ? "Describe any extra details (commands, permissions)..." : "Describe your menu..."}
-                                className="w-full min-h-[200px] p-6 rounded-[2rem] bg-[#1C1C1E] border border-[#333333] focus:border-[#FF3B30]/40 focus:ring-8 focus:ring-[#FF3B30]/5 transition-all text-base leading-relaxed resize-none shadow-2xl"
-                              />
+                              <div className="relative group/prompt">
+                                <textarea
+                                  value={activeMenu.prompt}
+                                  onChange={(e) => updateActiveMenu({ prompt: e.target.value })}
+                                  placeholder={activeMenu.isExact ? "Describe any extra details (commands, permissions)..." : "Describe your menu..."}
+                                  className="w-full min-h-[200px] p-6 pr-20 rounded-[2rem] bg-[#1C1C1E] border border-[#333333] focus:border-[#FF3B30]/40 focus:ring-8 focus:ring-[#FF3B30]/5 transition-all text-base leading-relaxed resize-none shadow-2xl"
+                                />
+                                <button 
+                                  onClick={toggleListening}
+                                  className={`absolute top-6 right-6 p-4 rounded-2xl border transition-all ${isListening ? 'bg-[#FF3B30] border-[#FF3B30] shadow-[0_0_20px_rgba(255,59,48,0.4)] animate-pulse' : 'bg-black/40 border-white/10 text-[#86868B] hover:text-[#FF3B30] hover:border-[#FF3B30]/40'}`}
+                                  title={isListening ? "Stop Dictation" : "Start Neural Dictation"}
+                                >
+                                  {isListening ? <Mic className="w-5 h-5 text-white" /> : <MicOff className="w-5 h-5" />}
+                                </button>
+                              </div>
                             </section>
 
                             {activeMenu.isExact && (
