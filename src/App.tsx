@@ -141,8 +141,8 @@ const AppleStudio = () => {
   }, []);
 
   const handleVerifyToken = async () => {
-    if (accessToken.length < 5) {
-      setError('Invalid neural access token format.');
+    if (!accessToken) {
+      setError('Neural access token required.');
       return;
     }
     setAuthLoading(true);
@@ -152,25 +152,27 @@ const AppleStudio = () => {
       const res = await fetch('/api/auth/verify-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: accessToken })
+        body: JSON.stringify({ token: accessToken.trim() })
       });
 
       if (res.ok) {
+        const data = await res.json();
         // Aesthetic delay for the link sequence
         setTimeout(() => {
           setIsAuthorized(true);
           setAuthStep('success');
-          localStorage.setItem('smartdm_auth_token', accessToken);
+          localStorage.setItem('smartdm_auth_token', data.token);
           setNotification({ message: 'Neural link established.', type: 'success' });
           setAuthLoading(false);
         }, 800);
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ error: 'Access denied.' }));
         setError(data.error || 'Access denied.');
         setAuthLoading(false);
       }
-    } catch (err) {
-      setError('Neural interface failure. Connection unstable.');
+    } catch (err: any) {
+      console.error('Auth error:', err);
+      setError(`Neural interface failure: ${err.message || 'Connection unstable'}`);
       setAuthLoading(false);
     }
   };
@@ -541,7 +543,7 @@ const AppleStudio = () => {
                         type="password"
                         value={accessToken}
                         onChange={(e) => setAccessToken(e.target.value)}
-                        placeholder="ENTER ACCESS CODE"
+                        placeholder="CODE: A4D6X-PR91-NV3R"
                         className="w-full bg-black/40 border border-[#333333] rounded-2xl p-4 pl-12 text-sm font-mono tracking-widest focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none"
                         onKeyDown={(e) => e.key === 'Enter' && handleVerifyToken()}
                       />
