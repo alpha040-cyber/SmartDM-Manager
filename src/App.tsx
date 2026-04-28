@@ -539,19 +539,7 @@ const AppleStudio = () => {
         )}
       </AnimatePresence>
 
-      {/* Session Auth Info */}
-      {isAuthorized && view === 'workspace' && (
-        <div className="absolute top-4 right-12 z-[60] flex items-center gap-4 bg-white/[0.03] border border-white/5 px-4 py-2 rounded-full">
-           <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-widest">Neural Link Active</span>
-           </div>
-           <div className="h-3 w-px bg-white/10" />
-           <button onClick={handleLogout} className="text-[#86868B] hover:text-[#FF3B30] transition-colors">
-              <LogOut className="w-3.5 h-3.5" />
-           </button>
-        </div>
-      )}
+      {/* Session Auth Info removed from absolute positioning */}
 
       <AnimatePresence mode="wait">
         {view === 'landing' ? (
@@ -809,16 +797,30 @@ const AppleStudio = () => {
                          <span className="text-xs font-bold text-[#86868B] uppercase tracking-[0.2em]">{activeProject?.name}</span>
                       </div>
 
-                      <div className="flex bg-black/40 p-1.5 rounded-xl border border-white/5">
-                        <button onClick={() => setActiveTab('code')} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'code' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'}`}>
-                          <FileCode className="w-3.5 h-3.5" /> Code
-                        </button>
-                        <button onClick={() => setActiveTab('preview')} disabled={!parsedMenu} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'preview' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'} ${!parsedMenu ? 'opacity-30 cursor-not-allowed' : ''}`}>
-                          <Eye className="w-3.5 h-3.5" /> GUI
-                        </button>
-                        <button onClick={() => setActiveTab('console')} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'console' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'}`}>
-                          <Monitor className="w-3.5 h-3.5" /> Console
-                        </button>
+                      <div className="flex items-center gap-6">
+                        {/* Session Auth Info integrated into header */}
+                        <div className="hidden lg:flex items-center gap-4 bg-white/[0.03] border border-white/5 px-4 py-2 rounded-full">
+                           <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                              <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-widest">Link Active</span>
+                           </div>
+                           <div className="h-3 w-px bg-white/10" />
+                           <button onClick={handleLogout} className="text-[#86868B] hover:text-[#FF3B30] transition-colors" title="Disconnect Neural Link">
+                              <LogOut className="w-3.5 h-3.5" />
+                           </button>
+                        </div>
+
+                        <div className="flex bg-black/40 p-1.5 rounded-xl border border-white/5">
+                          <button onClick={() => setActiveTab('code')} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'code' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'}`}>
+                            <FileCode className="w-3.5 h-3.5" /> Code
+                          </button>
+                          <button onClick={() => setActiveTab('preview')} disabled={!parsedMenu} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'preview' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'} ${!parsedMenu ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                            <Eye className="w-3.5 h-3.5" /> GUI
+                          </button>
+                          <button onClick={() => setActiveTab('console')} className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${activeTab === 'console' ? 'bg-[#FF3B30] text-white' : 'text-[#86868B] hover:text-white'}`}>
+                            <Monitor className="w-3.5 h-3.5" /> Console
+                          </button>
+                        </div>
                       </div>
                     </header>
 
