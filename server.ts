@@ -53,15 +53,26 @@ async function startServer() {
       const { token } = req.body;
       const LEGACY_TOKEN = "A4D6X-PR91-NV3R";
       
-      console.log(`[AUTH] Verifying token: ${token}`);
+      console.log(`[AUTH] Attempting verification with token: "${token}"`);
       
-      if (token && token.trim() === LEGACY_TOKEN) {
+      if (!token) {
+        return res.status(400).json({ error: "Neural access token missing." });
+      }
+
+      const normalize = (t: any) => t ? t.toString().replace(/[\s-]/g, "").toUpperCase() : "";
+      
+      const cleanToken = normalize(token);
+      const cleanLegacy = normalize(LEGACY_TOKEN);
+      
+      if (cleanToken === cleanLegacy) {
+        console.log("[AUTH] Verification successful.");
         return res.json({ success: true, token: LEGACY_TOKEN });
       } else {
+        console.log(`[AUTH] Verification failed. Expected ${cleanLegacy}, got ${cleanToken}`);
         return res.status(401).json({ error: "Invalid neural access code." });
       }
     } catch (error) {
-      console.error("[AUTH] Error in verify-token:", error);
+      console.error("[AUTH] Fatal error in verify-token:", error);
       return res.status(500).json({ error: "Internal core failure." });
     }
   });

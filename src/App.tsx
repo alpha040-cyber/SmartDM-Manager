@@ -141,8 +141,10 @@ const AppleStudio = () => {
   }, []);
 
   const handleVerifyToken = async () => {
-    if (!accessToken) {
+    const trimmedToken = accessToken.trim();
+    if (!trimmedToken) {
       setError('Neural access token required.');
+      setNotification({ message: 'Access Denied', type: 'error' });
       return;
     }
     setAuthLoading(true);
@@ -152,11 +154,12 @@ const AppleStudio = () => {
       const res = await fetch('/api/auth/verify-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: accessToken.trim() })
+        body: JSON.stringify({ token: trimmedToken })
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data) {
         // Aesthetic delay for the link sequence
         setTimeout(() => {
           setIsAuthorized(true);
@@ -166,13 +169,17 @@ const AppleStudio = () => {
           setAuthLoading(false);
         }, 800);
       } else {
-        const data = await res.json().catch(() => ({ error: 'Access denied.' }));
-        setError(data.error || 'Access denied.');
+        const errorMsg = data?.error || (res.status === 401 ? 'Invalid access code signature.' : 'Core handshake failed.');
+        setError(errorMsg);
+        setNotification({ message: 'Verification Failed', type: 'error' });
         setAuthLoading(false);
       }
     } catch (err: any) {
       console.error('Auth error:', err);
-      setError(`Neural interface failure: ${err.message || 'Connection unstable'}`);
+      const isOffline = !navigator.onLine || err.message?.includes('Failed to fetch');
+      const msg = isOffline ? 'Neural Uplink Offline. Signal Lost.' : `Neural interface failure: ${err.message || 'unstable signal'}`;
+      setError(msg);
+      setNotification({ message: 'Link Error', type: 'error' });
       setAuthLoading(false);
     }
   };
@@ -415,7 +422,7 @@ const AppleStudio = () => {
       }
 
       const result = await ai.models.generateContentStream({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         contents: [{ role: 'user', parts: promptParts.map(p => typeof p === 'string' ? { text: p } : p) }],
         config: { systemInstruction, temperature: 0.7 }
       });
@@ -441,16 +448,27 @@ const AppleStudio = () => {
       setNotification({ message: 'Configuration synthesized successfully', type: 'success' });
     } catch (err: any) {
       console.error("Generation error:", err);
-      let msg = err.message || 'Synthesis aborted due to an internal error.';
+      let msg = 'Synthesis aborted due to an internal error.';
+      let type: 'error' | 'warning' = 'error';
       
-      // Handle Specific 429 Error
-      if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429')) {
-        msg = 'The neural engine is under heavy demand. Please wait 30 seconds and try again.';
+      const errorStr = (err.message || '').toUpperCase();
+      
+      if (errorStr.includes('RESOURCE_EXHAUSTED') || errorStr.includes('429')) {
+        msg = 'Neural engine overloaded (Quota Exceeded). Please wait 60 seconds.';
+      } else if (errorStr.includes('SAFETY') || errorStr.includes('BLOCKED')) {
+        msg = 'Synthesis blocked by safety filters. Adjust your neural input parameters.';
+        type = 'warning';
+      } else if (errorStr.includes('API_KEY')) {
+        msg = 'Neural core link missing. API key configuration error.';
+      } else if (errorStr.includes('NETWORK') || errorStr.includes('FETCH')) {
+        msg = 'Neural signal lost. Check your uplink connection.';
+      } else if (err.message) {
+        msg = err.message;
       }
       
       setError(msg);
       addLog('system', `Failure: ${msg}`);
-      setNotification({ message: 'Synthesis Failed', type: 'error' });
+      setNotification({ message: 'Synthesis Failed', type });
     } finally {
       setIsGenerating(false);
     }
