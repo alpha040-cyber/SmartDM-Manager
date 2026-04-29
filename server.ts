@@ -44,59 +44,14 @@ async function startServer() {
     next();
   });
 
-  // --- API ROUTER ---
-  const apiRouter = express.Router();
-
-  apiRouter.get("/health", (req, res) => {
+  // --- API ROUTES ---
+  app.get("/api/health", (req, res) => {
     res.json({ status: "alive", timestamp: new Date().toISOString() });
   });
 
-  apiRouter.get("/system/status", (req, res) => {
+  app.get("/api/system/status", (req, res) => {
     const db = getDb();
     res.json(db.settings);
-  });
-
-  apiRouter.post("/ai/generate", async (req, res) => {
-    try {
-      const { promptParts, systemInstruction } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
-
-      if (!apiKey) {
-        console.error("[AI] GEMINI_API_KEY missing");
-        return res.status(500).json({ error: "Neural core link missing. API key configuration error on server." });
-      }
-
-      const genAI = new GoogleGenAI({ apiKey });
-      
-      // Convert prompt parts
-      const parts = promptParts.map((p: any) => {
-        if (typeof p === "string") return { text: p };
-        if (p.inlineData) return p;
-        return p;
-      });
-
-      const result = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [{ role: "user", parts }],
-        config: { 
-          systemInstruction,
-          temperature: 0.7 
-        }
-      });
-
-      res.json({ text: result.text });
-    } catch (error: any) {
-      console.error("[AI ERROR]", error);
-      res.status(500).json({ error: error.message || "Failure during neural synthesis." });
-    }
-  });
-
-  app.use("/api", apiRouter);
-
-  // Catch-all for undefined API routes to prevent 404s from being silent
-  app.use("/api/*", (req, res) => {
-    console.warn(`[NET] 404 on API route: ${req.method} ${req.originalUrl}`);
-    res.status(404).json({ error: `Neural endpoint [${req.originalUrl}] not found.` });
   });
 
   // --- ADMIN ROUTES ---

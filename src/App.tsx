@@ -30,6 +30,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from "@google/genai";
 import yaml from 'js-yaml';
 
 type AuthStep = 'maintenance' | 'success';
@@ -102,6 +103,7 @@ const AppleStudio = () => {
           setSystemStatus({ maintenance: false, maintenanceMessage: '' });
         }
       } catch (err) {
+        console.warn('System status unreachable, defaulting to standby.');
         setSystemStatus({ maintenance: false, maintenanceMessage: '' });
       }
     };
@@ -332,19 +334,31 @@ const AppleStudio = () => {
       setWorkspaceTab('source');
       updateActiveMenu({ rawConfig: '' });
 
-      const res = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promptParts, systemInstruction })
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Synthesis failed [${res.status}]`);
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('Neural core link missing. API key configuration error.');
       }
 
-      const data = await res.json();
-      const fullText = data.text;
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const contents = [{ 
+        role: 'user', 
+        parts: promptParts.map((p: any) => {
+          if (typeof p === 'string') return { text: p };
+          return p;
+        })
+      }];
+
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents,
+        config: { 
+          systemInstruction,
+          temperature: 0.7 
+        }
+      });
+
+      const fullText = result.text;
 
       // Final sanitization
       const cleanCode = fullText.replace(/```[a-z]*\n|```/g, '').trim();
