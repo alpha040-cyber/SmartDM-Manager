@@ -30,7 +30,6 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from "@google/genai";
 import yaml from 'js-yaml';
 
 type AuthStep = 'maintenance' | 'success';
@@ -293,15 +292,6 @@ const AppleStudio = () => {
     addLog('system', 'Initializing neural engine for DeluxeMenus synthesis...');
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        addLog('system', 'Error: GEMINI_API_KEY is missing from environment.');
-        throw new Error('API Key configuration missing. Please check your project settings.');
-      }
-
-      console.log('AI Studio: Gemini API initialized with key presence:', !!apiKey);
-      const ai = new GoogleGenAI({ apiKey });
-      
       const systemInstruction = `
           You are an expert Minecraft plugin developer specialized in DeluxeMenus.
           Current focus: Latest versions (1.21+).
@@ -339,24 +329,22 @@ const AppleStudio = () => {
         `);
       }
 
-      const result = await ai.models.generateContentStream({
-        model: "gemini-3-flash-preview",
-        contents: [{ role: 'user', parts: promptParts.map(p => typeof p === 'string' ? { text: p } : p) }],
-        config: { systemInstruction, temperature: 0.7 }
+      setWorkspaceTab('source');
+      updateActiveMenu({ rawConfig: '' });
+
+      const res = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptParts, systemInstruction })
       });
 
-      let fullText = '';
-      updateActiveMenu({ rawConfig: '' });
-      setWorkspaceTab('source');
-
-      for await (const chunk of result) {
-        const chunkText = chunk.text;
-        if (chunkText) {
-          fullText += chunkText;
-          // Real-time update with minimal filtering
-          updateActiveMenu({ rawConfig: fullText });
-        }
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Synthesis failed [${res.status}]`);
       }
+
+      const data = await res.json();
+      const fullText = data.text;
 
       // Final sanitization
       const cleanCode = fullText.replace(/```[a-z]*\n|```/g, '').trim();
