@@ -19,10 +19,7 @@ import {
   ChevronRight,
   Settings,
   MoreVertical,
-  Key,
-  ShieldCheck,
   Search,
-  Lock,
   Clock,
   LogOut,
   Hash,
@@ -36,7 +33,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import yaml from 'js-yaml';
 
-type AuthStep = 'license' | 'maintenance' | 'success';
+type AuthStep = 'maintenance' | 'success';
 
 interface AnchorSlot {
   slot: number;
@@ -62,12 +59,10 @@ interface Project {
 }
 
 const AppleStudio = () => {
-  // Auth & Licensing
-  const [authStep, setAuthStep] = useState<AuthStep>('license');
-  const [accessToken, setAccessToken] = useState('');
+  // System Status
+  const [authStep, setAuthStep] = useState<AuthStep>('success');
   const [systemStatus, setSystemStatus] = useState<{ maintenance: boolean; maintenanceMessage: string } | null>(null);
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [adminLicenseSecret, setAdminLicenseSecret] = useState('studio-admin-2026'); // Demo default
   
@@ -112,84 +107,7 @@ const AppleStudio = () => {
       }
     };
     checkSystem();
-
-    // Load session
-    const checkToken = async () => {
-      const savedAuth = localStorage.getItem('smartdm_auth_token');
-      if (savedAuth) {
-        try {
-          const res = await fetch('/api/auth/verify-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: savedAuth })
-          });
-          if (res.ok) {
-            setIsAuthorized(true);
-            setAuthStep('success');
-          } else {
-            localStorage.removeItem('smartdm_auth_token');
-            setIsAuthorized(false);
-            setAuthStep('license');
-          }
-        } catch (e) {
-          // If we can't reach the server, we'll wait for the user to try again
-          setAuthStep('license');
-        }
-      }
-    };
-    checkToken();
   }, []);
-
-  const handleVerifyToken = async () => {
-    const trimmedToken = accessToken.trim();
-    if (!trimmedToken) {
-      setError('Neural access token required.');
-      setNotification({ message: 'Access Denied', type: 'error' });
-      return;
-    }
-    setAuthLoading(true);
-    setError('');
-    
-    try {
-      const res = await fetch('/api/auth/verify-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: trimmedToken })
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (res.ok && data) {
-        // Aesthetic delay for the link sequence
-        setTimeout(() => {
-          setIsAuthorized(true);
-          setAuthStep('success');
-          localStorage.setItem('smartdm_auth_token', data.token);
-          setNotification({ message: 'Neural link established.', type: 'success' });
-          setAuthLoading(false);
-        }, 800);
-      } else {
-        const errorMsg = data?.error || (res.status === 401 ? 'Invalid access code sequence.' : `Handshake failed [Status: ${res.status}]`);
-        setError(errorMsg);
-        setNotification({ message: 'Authorization Denied', type: 'error' });
-        setAuthLoading(false);
-      }
-    } catch (err: any) {
-      console.error('Auth error:', err);
-      const isOffline = !navigator.onLine || err.message?.includes('Failed to fetch');
-      const msg = isOffline ? 'Neural Uplink Offline. Signal Lost.' : `Neural interface failure: ${err.message || 'unstable signal'}`;
-      setError(msg);
-      setNotification({ message: 'Link Error', type: 'error' });
-      setAuthLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('smartdm_auth_token');
-    setIsAuthorized(false);
-    setAuthStep('license');
-    setAccessToken('');
-  };
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projects.length > 0 ? projects[0].id : null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(projects.length > 0 && projects[0].menus.length > 0 ? projects[0].menus[0].id : null);
@@ -527,64 +445,6 @@ const AppleStudio = () => {
   return (
     <div className="h-screen bg-black text-white font-sans selection:bg-[#FF3B30] selection:text-white overflow-hidden relative">
       <AnimatePresence>
-        {!isAuthorized && view === 'workspace' && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 sm:p-12">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/90 backdrop-blur-3xl"
-            />
-            <motion.div 
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="max-w-md w-full p-12 bg-[#1C1C1E] border border-[#333333] rounded-[3rem] shadow-2xl relative z-10 space-y-8"
-            >
-              <div className="flex flex-col items-center gap-4 text-center">
-                 <div className="w-16 h-16 bg-[#FF3B30] rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,59,48,0.3)]">
-                   <Lock className="w-8 h-8 text-white" />
-                 </div>
-                 <div className="space-y-1">
-                   <h1 className="text-2xl font-bold tracking-tight uppercase tracking-wider">Neural Access</h1>
-                   <p className="text-[9px] text-[#86868B] font-bold uppercase tracking-[0.3em]">Apple Studio Secure Protocol</p>
-                 </div>
-              </div>
-
-              <AnimatePresence mode="wait">
-                <motion.div key="license" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-[#86868B] ml-2">Neural Access Code</label>
-                    <div className="relative">
-                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B]" />
-                      <input 
-                        type="password"
-                        value={accessToken}
-                        onChange={(e) => setAccessToken(e.target.value)}
-                        placeholder="CODE: A4D6X-PR91-NV3R"
-                        className="w-full bg-black/40 border border-[#333333] rounded-2xl p-4 pl-12 text-sm font-mono tracking-widest focus:ring-2 focus:ring-[#FF3B30]/20 focus:border-[#FF3B30] transition-all outline-none"
-                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyToken()}
-                      />
-                    </div>
-                  </div>
-                  <button 
-                    onClick={handleVerifyToken}
-                    disabled={authLoading || accessToken.length < 4}
-                    className="w-full bg-[#FF3B30] py-4 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all"
-                  >
-                    {authLoading ? 'VERIFYING...' : 'INITIALIZE LINK'}
-                  </button>
-                  <p className="text-[9px] text-center text-[#86868B] uppercase tracking-widest leading-relaxed">
-                    Access Code Required for Neural Synchronization
-                  </p>
-                  <button onClick={() => setView('landing')} className="w-full text-[10px] font-bold text-[#86868B] uppercase tracking-widest hover:text-white transition-colors">Return to Dashboard</button>
-                </motion.div>
-              </AnimatePresence>
-
-              {error && <p className="text-[10px] font-bold text-[#FF3B30] text-center uppercase border border-[#FF3B30]/20 p-3 rounded-xl">{error}</p>}
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
 
       {/* Internal Management (Hidden Trigger: Alt + A) */}
@@ -896,16 +756,9 @@ const AppleStudio = () => {
                       </div>
 
                       <div className="flex items-center gap-6">
-                        {/* Session Auth Info integrated into header */}
-                        <div className="hidden lg:flex items-center gap-4 bg-white/[0.03] border border-white/5 px-4 py-2 rounded-full">
-                           <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                              <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-widest">Link Active</span>
-                           </div>
-                           <div className="h-3 w-px bg-white/10" />
-                           <button onClick={handleLogout} className="text-[#86868B] hover:text-[#FF3B30] transition-colors" title="Disconnect Neural Link">
-                              <LogOut className="w-3.5 h-3.5" />
-                           </button>
+                        <div className="hidden lg:flex items-center gap-3">
+                           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                           <span className="text-[10px] font-bold text-[#86868B] uppercase tracking-[0.2em]">Neural Engine Ready</span>
                         </div>
                       </div>
                     </header>

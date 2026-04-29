@@ -11,8 +11,6 @@ const DATA_FILE = path.join(process.cwd(), "db.json");
 
 // Initial DB structure
 const initialDb = {
-  users: [], // List of verified emails
-  verifications: {}, // email -> { code, expiry }
   settings: {
     maintenance: false,
     maintenanceMessage: "System is currently undergoing deep core optimization. Please stand by."
@@ -39,61 +37,33 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Request Logger for Debugging
+  // Request Logger
   app.use((req, res, next) => {
-    console.log(`[NET] ${req.method} ${req.url} | ${new Date().toISOString()}`);
+    console.log(`[NET] ${req.method} ${req.url}`);
     next();
   });
 
-  // --- API ROUTES ---
+  // --- API ROUTER ---
+  const apiRouter = express.Router();
 
-  // Check System Status
-  app.get("/api/system/status", (req, res) => {
+  apiRouter.get("/health", (req, res) => {
+    res.json({ status: "alive", timestamp: new Date().toISOString() });
+  });
+
+  apiRouter.get("/system/status", (req, res) => {
     const db = getDb();
     res.json(db.settings);
   });
 
-  // token Verification
-  app.post("/api/auth/verify-token", (req, res) => {
-    console.log(`[AUTH] Handshake request received at ${new Date().toISOString()}`);
-    console.log(`[AUTH] Headers:`, JSON.stringify(req.headers, null, 2));
-    
-    try {
-      const { token } = req.body;
-      const LEGACY_TOKEN = "A4D6X-PR91-NV3R";
-      
-      console.log(`[AUTH] Raw token from body: "${token}"`);
-      
-      if (!token) {
-        console.warn("[AUTH] Missing token in request body");
-        return res.status(400).json({ error: "Access token missing from transmission." });
-      }
+  app.use("/api", apiRouter);
 
-      const normalize = (t: any) => t ? t.toString().replace(/[\s-]/g, "").trim().toUpperCase() : "";
-      
-      const cleanToken = normalize(token);
-      const cleanLegacy = normalize(LEGACY_TOKEN);
-      
-      console.log(`[AUTH] Comparing: "${cleanToken}" vs "${cleanLegacy}"`);
-      
-      if (cleanToken === cleanLegacy) {
-        console.log("[AUTH] Verification successful. Initializing link.");
-        return res.json({ 
-          success: true, 
-          token: LEGACY_TOKEN,
-          status: "Neural Link Established"
-        });
-      } else {
-        console.warn(`[AUTH] Verification failed. Input: "${cleanToken}"`);
-        return res.status(401).json({ error: "Neutral access code sequence invalid." });
-      }
-    } catch (error) {
-      console.error("[AUTH] Fatal core exception during verification:", error);
-      return res.status(500).json({ error: "Neural core processing failure." });
-    }
+  // Catch-all for undefined API routes to prevent 404s from being silent
+  app.use("/api/*", (req, res) => {
+    console.warn(`[NET] 404 on API route: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ error: `Neural endpoint [${req.originalUrl}] not found.` });
   });
 
-  // --- ADMIN ROUTES (Internal) ---
+  // --- ADMIN ROUTES ---
   app.post("/api/admin/toggle-maintenance", (req, res) => {
     const { secret, state, message } = req.body;
     if (secret !== "studio-admin-2026") return res.status(401).json({ error: "Unauthorized access to neural core." });
@@ -103,14 +73,6 @@ async function startServer() {
     if (message) db.settings.maintenanceMessage = message;
     saveDb(db);
     res.json({ success: true, settings: db.settings });
-  });
-
-  app.get("/api/admin/users", (req, res) => {
-    const { secret } = req.query;
-    if (secret !== "studio-admin-2026") return res.status(401).json({ error: "Unauthorized" });
-    
-    const db = getDb();
-    res.json({ users: db.users });
   });
 
   // --- VITE MIDDLEWARE ---
